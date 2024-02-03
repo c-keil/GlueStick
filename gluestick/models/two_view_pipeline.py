@@ -171,28 +171,23 @@ class TwoViewPipeline(BaseModel):
         return pred
     
     def _match_forward(self, pred):
-        # print("_matcher")
-        # print(pred.keys())
-        # print(data.keys())
+        
         if self.conf.matcher.name:
             pred = {**pred, **self.matcher(pred)}
             # pred = {**pred, **self.matcher({**data, **pred})}
-        print("Matcher Pred")
-        print(pred.keys())
 
         if self.conf.filter.name:
-            pred = {**pred, **self.filter({**data, **pred})}
-            print("This Happened")
+            pred = {**pred, **self.filter(**pred)}
+            # pred = {**pred, **self.filter({**data, **pred})}
 
         if self.conf.solver.name:
-            pred = {**pred, **self.solver({**data, **pred})}
-            print("This Also Happened")
+            pred = {**pred, **self.solver(**pred)}
+            # pred = {**pred, **self.solver({**data, **pred})}
 
         return pred
 
     def _forward(self, data):
-        print("data keys")
-        print(data.keys())
+
         pred = self._extract_forward(data)
 
         pred = self._match_forward(pred)        
