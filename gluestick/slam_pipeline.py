@@ -58,6 +58,7 @@ class SLAM_Pipeline():
         '''expects a numpy array image'''
         #convert to torch 
         torch_image = numpy_image_to_torch(image)
+        torch_image = torch_image.to(self.device)[None]
         #run get kps, lines, descs
         pred = self.pipeline._extract_single_forward(torch_image)
         #get numpy versions of everything
@@ -75,3 +76,30 @@ class SLAM_Pipeline():
 
         return pred 
 
+if __name__ == "__main__":
+    
+    import cv2
+
+    slam_pipe = SLAM_Pipeline()
+
+    
+    img_path0 = "/media/colin/box_data/ir_data/nuance_data/kri_day_2/cam_3/matlab_clahe2/1689805041743999958.png"
+    img_path1 = "/media/colin/box_data/ir_data/nuance_data/kri_night/cam_3/matlab_clahe2/1689819945923000097.png"
+    gray0 = cv2.imread(img_path0, cv2.IMREAD_GRAYSCALE)
+    gray1 = cv2.imread(img_path1, cv2.IMREAD_GRAYSCALE)
+
+    # import matplotlib.pyplot as plt
+    # f, axarr = plt.subplots(1, 2)
+    # axarr[0].imshow(gray0, cmap='gray')
+    # axarr[1].imshow(gray1, cmap='gray')
+    # plt.show()
+
+    # torch_gray0, torch_gray1 = numpy_image_to_torch(gray0), numpy_image_to_torch(gray1)
+    # torch_gray0, torch_gray1 = torch_gray0.to(slam_pipe.device)[None], torch_gray1.to(slam_pipe.device)[None]
+
+    pred0 = slam_pipe.detect_extract(gray0)
+    pred1 = slam_pipe.detect_extract(gray1)
+
+    pred = slam_pipe.match(pred0, pred1)
+
+    print(pred.keys())
