@@ -50,4 +50,4 @@ def map_tensor(input_, func):
 
 
 def batch_to_np(batch):
-    return map_tensor(batch, lambda t: t.detach().cpu().numpy()[0])
+    return map_tensor(batch, lambda t: t.detach().cpu().numpy()[0] if type(t) == torch.Tensor else t)

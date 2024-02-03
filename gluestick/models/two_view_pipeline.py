@@ -113,43 +113,142 @@ class TwoViewPipeline(BaseModel):
         if conf.solver.name:
             self.solver = get_model(conf.solver.name)(conf.solver)
 
-    def _forward(self, data):
+        # def process_siamese(data, i):
+        #         data_i = {k[:-1]: v for k, v in data.items() if k[-1] == i}
+        #         if self.conf.extractor.name:
+        #             pred_i = self.extractor(data_i)
+        #         else:
+        #             pred_i = {}
+        #             if self.conf.detector.name:
+        #                 pred_i = self.detector(data_i)
+        #             else:
+        #                 for k in ['keypoints', 'keypoint_scores', 'descriptors',
+        #                         'lines', 'line_scores', 'line_descriptors',
+        #                         'valid_lines']:
+        #                     if k in data_i:
+        #                         pred_i[k] = data_i[k]
+        #             if self.conf.descriptor.name:
+        #                 pred_i = {
+        #                     **pred_i, **self.descriptor({**data_i, **pred_i})}
+        #         return pred_i
+        # pred = process_siamese(data, '0')
+    
+    def _extract_single_forward(self, image):
 
-        def process_siamese(data, i):
-            data_i = {k[:-1]: v for k, v in data.items() if k[-1] == i}
-            if self.conf.extractor.name:
-                pred_i = self.extractor(data_i)
+        data_i = {'image':image}
+        if self.conf.extractor.name:
+            pred_i = self.extractor(data_i)
+        else:
+            pred_i = {}
+            if self.conf.detector.name:
+                pred_i = self.detector(data_i)
             else:
-                pred_i = {}
-                if self.conf.detector.name:
-                    pred_i = self.detector(data_i)
-                else:
-                    for k in ['keypoints', 'keypoint_scores', 'descriptors',
-                              'lines', 'line_scores', 'line_descriptors',
-                              'valid_lines']:
-                        if k in data_i:
-                            pred_i[k] = data_i[k]
-                if self.conf.descriptor.name:
-                    pred_i = {
-                        **pred_i, **self.descriptor({**data_i, **pred_i})}
-            return pred_i
+                for k in ['keypoints', 'keypoint_scores', 'descriptors',
+                        'lines', 'line_scores', 'line_descriptors',
+                        'valid_lines', 'image_size']:
+                    if k in data_i:
+                        pred_i[k] = data_i[k]
+            if self.conf.descriptor.name:
+                pred_i = {
+                    **pred_i, **self.descriptor({**data_i, **pred_i})}
+        #workaround to keep from passing the image a lot
+        pred_i['image_size'] = image.shape
+        return pred_i
+    
+    def _merge_kp_pred(self, pred0, pred1):
+        return {**{k + '0': v for k, v in pred0.items()}, **{k + '1': v for k, v in pred1.items()}}
 
-        pred0 = process_siamese(data, '0')
-        pred1 = process_siamese(data, '1')
+    def _extract_forward(self, data):
 
-        pred = {**{k + '0': v for k, v in pred0.items()},
-                **{k + '1': v for k, v in pred1.items()}}
+        pred0 = self._extract_single_forward(data['image0'])
+        pred1 = self._extract_single_forward(data['image1'])
 
+        # pred1 = process_siamese(data, '1')
+        pred = self._merge_kp_pred(pred0, pred1)
+        pred['image_size0'] = data['image0'].shape
+        pred['image_size1'] = data['image1'].shape
+
+        return pred
+    
+    def _match_forward(self, pred):
+        # print("_matcher")
+        # print(pred.keys())
+        # print(data.keys())
         if self.conf.matcher.name:
-            pred = {**pred, **self.matcher({**data, **pred})}
+            pred = {**pred, **self.matcher(pred)}
+            # pred = {**pred, **self.matcher({**data, **pred})}
+        print("Matcher Pred")
+        print(pred.keys())
 
         if self.conf.filter.name:
             pred = {**pred, **self.filter({**data, **pred})}
+            print("This Happened")
 
         if self.conf.solver.name:
             pred = {**pred, **self.solver({**data, **pred})}
+            print("This Also Happened")
 
         return pred
+
+    def _forward(self, data):
+        print("data keys")
+        print(data.keys())
+        pred = self._extract_forward(data)
+
+        pred = self._match_forward(pred)        
+
+        return pred
+
+    # def _forward(self, data):
+    #     print("data keys")
+    #     print(data.keys())
+    #     def process_siamese(data, i):
+    #         data_i = {k[:-1]: v for k, v in data.items() if k[-1] == i}
+    #         if self.conf.extractor.name:
+    #             pred_i = self.extractor(data_i)
+    #         else:
+    #             pred_i = {}
+    #             if self.conf.detector.name:
+    #                 pred_i = self.detector(data_i)
+    #             else:
+    #                 for k in ['keypoints', 'keypoint_scores', 'descriptors',
+    #                           'lines', 'line_scores', 'line_descriptors',
+    #                           'valid_lines']:
+    #                     if k in data_i:
+    #                         pred_i[k] = data_i[k]
+    #             if self.conf.descriptor.name:
+    #                 pred_i = {
+    #                     **pred_i, **self.descriptor({**data_i, **pred_i})}
+    #         return pred_i
+
+    #     pred0 = process_siamese(data, '0')
+    #     pred1 = process_siamese(data, '1')
+    #     # print("matcher")
+    #     # print(self.matcher)
+    #     # print(self.conf['matcher'])
+    #     print("Pred0")
+    #     print(pred0.keys())
+    #     # print(pred0)
+
+
+    #     pred = {**{k + '0': v for k, v in pred0.items()},
+    #             **{k + '1': v for k, v in pred1.items()}}
+
+    #     if self.conf.matcher.name:
+    #         pred = {**pred, **self.matcher({**data, **pred})}
+    #         print('This???')
+    #     print("Matcher Pred")
+    #     print(pred.keys())
+
+    #     if self.conf.filter.name:
+    #         pred = {**pred, **self.filter({**data, **pred})}
+    #         print("This Happened")
+
+    #     if self.conf.solver.name:
+    #         pred = {**pred, **self.solver({**data, **pred})}
+    #         print("This Also Happened")
+
+    #     return pred
 
     def loss(self, pred, data):
         losses = {}
