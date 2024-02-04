@@ -72,8 +72,8 @@ class SLAM_Pipeline():
         #merge image batches
         pred = self.pipeline._merge_kp_pred(image_data1, image_data2)
         #match
-        pred = self.pipeline._match_forward(pred)
-
+        pred = batch_to_np(self.pipeline._match_forward(pred))
+        
         return pred 
 
 if __name__ == "__main__":
@@ -99,7 +99,14 @@ if __name__ == "__main__":
 
     pred0 = slam_pipe.detect_extract(gray0)
     pred1 = slam_pipe.detect_extract(gray1)
+    print("kp detection keys")
+    for k, v in pred0.items():
+        print("key : {} , type : {}, shape {}".format(k, type(v), v.shape if type(v) == np.ndarray else -1))
+    print(pred0["keypoints"][0])
 
     pred = slam_pipe.match(pred0, pred1)
-
+    print("match result keys")
     print(pred.keys())
+
+    for k, v in pred.items():
+        print("key : {} , type : {}, shape {}".format(k, type(v), v.shape if type(v) == np.ndarray else -1))
