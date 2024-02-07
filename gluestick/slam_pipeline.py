@@ -103,10 +103,13 @@ if __name__ == "__main__":
     for k, v in pred0.items():
         print("key : {} , type : {}, shape {}".format(k, type(v), v.shape if type(v) == np.ndarray else -1))
     print(pred0["keypoints"][0])
+    print("descriptor row:\n{}".format(pred0["descriptors"][0,:10]))
 
     pred = slam_pipe.match(pred0, pred1)
+    print("descriptor row:\n{}".format(pred0["descriptors"][0,0,:10]))
+    print("descriptor row:\n{}".format(pred["descriptors0"][0,:10]))
     print("match result keys")
     print(pred.keys())
-
     for k, v in pred.items():
         print("key : {} , type : {}, shape {}".format(k, type(v), v.shape if type(v) == np.ndarray else -1))
+    print(pred["matches0"])
