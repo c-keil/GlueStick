@@ -21,7 +21,7 @@ def numpy_to_batch(batch, device):
 class SLAM_Pipeline():
     '''thin wrapper around gluestick to make integration to c++ more convenient'''
     def __init__(self):
-
+        print("Python Side -- __init__ SLAM_Pipeline()")
         MAX_N_POINTS, MAX_N_LINES = 1000, 300
 
         # Evaluation config
@@ -54,8 +54,9 @@ class SLAM_Pipeline():
 
         self.pipeline = TwoViewPipeline(conf).to(self.device).eval()
     
-    def detect_extract(self, image):
+    def detect_extract(self, image, transpose = True):
         '''expects a numpy array image'''
+        print("Python side -- detect_extract()")
         #convert to torch 
         torch_image = numpy_image_to_torch(image)
         torch_image = torch_image.to(self.device)[None]
@@ -63,6 +64,9 @@ class SLAM_Pipeline():
         pred = self.pipeline._extract_single_forward(torch_image)
         #get numpy versions of everything
         pred = batch_to_np(pred)
+        if transpose:
+            pred["descriptors"] = pred["descriptors"].T
+        print("Python: extracted {} descriptors".format(len(pred["descriptors"])))
         return pred
     
     def match(self, image_data1, image_data2):
