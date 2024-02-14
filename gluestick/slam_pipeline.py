@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import cv2
 
 from gluestick import batch_to_np, numpy_image_to_torch, GLUESTICK_ROOT
 # from gluestick.drawing import plot_images, plot_lines, plot_color_line_matches, plot_keypoints, plot_matches
@@ -23,7 +24,7 @@ class SLAM_Pipeline():
     def __init__(self):
         print("Python Side -- __init__ SLAM_Pipeline()")
         MAX_N_POINTS, MAX_N_LINES = 1000, 300
-
+        self.image_counter = 0 #debug
         # Evaluation config
         conf = {
             'name': 'two_view_pipeline',
@@ -65,8 +66,17 @@ class SLAM_Pipeline():
         #get numpy versions of everything
         pred = batch_to_np(pred)
         if transpose:
-            pred["descriptors"] = pred["descriptors"].T
-        print("Python: extracted {} descriptors".format(len(pred["descriptors"])))
+            pred["descriptors"] = pred["descriptors"].T.copy(order = 'C')
+        # print("Python: descriptors shape : {}".format(pred["descriptors"].shape))
+        # print("Python: extracted {} descriptors".format(len(pred["descriptors"])))
+        # print("Desc first row: {}...".format(pred["descriptors"][0,:10]))
+        # print("Desc last row: {}...".format(pred["descriptors"][-1,:10]))
+        # # print("Flags:")
+        # # print(pred["descriptors"].flags)
+        # #debug stuff
+        # p = "/home/colin/Research/ir/slam_ws/tmp"
+        # cv2.imwrite(p + "/debug_image_{}.png".format(self.image_counter), image)
+        # self.image_counter += 1 
         return pred
     
     def match(self, image_data1, image_data2):
