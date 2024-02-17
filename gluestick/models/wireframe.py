@@ -72,6 +72,26 @@ def lines_to_wireframe(lines, line_scores, all_descs, conf):
     return (junctions, junc_scores, junc_descs, connectivity,
             new_lines, lines_junc_idx, num_true_junctions)
 
+def fix_lines(lines, shape):
+    '''Finds lines off the edge of the image and fixes them
+    expects shape in format (image_y, image_x)'''
+    max_dims = np.array((shape[1],shape[0])).reshape(1,2) - 1
+    for idx in np.vstack((np.argwhere(lines < 0) , np.argwhere(lines > max_dims))): #possible multiple bad endpoints
+        line = lines[idx[0]]
+        i = idx[1:]
+        slope = (line[0,1] - line[1,1])/(line[0,0] - line[1,0])
+        #check if any x is negative\
+        good_endpoint_idx = int(not i[0])
+        if i[1] == 0:
+            x = 0 if lines[idx[0],idx[1],idx[2]] < 0 else max_dims[0,0]
+            y = line[good_endpoint_idx,1] - (line[good_endpoint_idx,0] - x)*slope
+        #check if any y is negative
+        if i[1] == 1:
+            y = 0 if lines[idx[0],idx[1],idx[2]] < 0 else max_dims[0,1]
+            x = line[good_endpoint_idx,0] - (line[good_endpoint_idx,1] - y)/slope
+        line[i[0]] = [x,y]
+        lines[idx[0]] = line
+    return lines
 
 class SPWireframeDescriptor(BaseModel):
     default_conf = {
@@ -112,6 +132,7 @@ class SPWireframeDescriptor(BaseModel):
         for b in range(len(x)):
             # For each image on batch
             img = (x[b].squeeze().cpu().numpy() * 255).astype(np.uint8)
+            shape = img.shape
             if max_n_lines is None:
                 b_segs = lsd(img)
             else:
@@ -119,6 +140,9 @@ class SPWireframeDescriptor(BaseModel):
                     b_segs = lsd(img, scale=s)
                     if len(b_segs) >= max_n_lines:
                         break
+            
+            #adjust endpoints that go off the edge of the image
+            b_segs[:,:4] = fix_lines(b_segs[:,:4].reshape(-1,2,2), shape).reshape(-1,4)
 
             segs_length = np.linalg.norm(b_segs[:, 2:4] - b_segs[:, 0:2], axis=1)
             # Remove short lines
