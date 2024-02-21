@@ -54,6 +54,9 @@ class SLAM_Pipeline():
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.pipeline = TwoViewPipeline(conf).to(self.device).eval()
+
+        self.frames = {}
+        self.next_frame_id = 0
     
     def detect_extract(self, image, transpose = True):
         '''expects a numpy array image'''
@@ -67,6 +70,11 @@ class SLAM_Pipeline():
         pred = batch_to_np(pred)
         if transpose:
             pred["descriptors"] = pred["descriptors"].T.copy(order = 'C')
+        if np.any(pred["keypoints"] < 0) or np.any(pred["keypoints"] > np.array((639,511)).reshape(1,2)):
+            print("python -- BAD KEYPOINT")
+            p = "/home/colin/Research/ir/slam_ws/tmp"
+            cv2.imwrite(p + "/debug_image_{}.png".format(self.image_counter), image)
+            print(pred["keypoints"][pred["keypoints"] > np.array((639,511)).reshape(1,2)] )
         # print("Python: descriptors shape : {}".format(pred["descriptors"].shape))
         # print("Python: extracted {} descriptors".format(len(pred["descriptors"])))
         # print("Desc first row: {}...".format(pred["descriptors"][0,:10]))
@@ -79,6 +87,49 @@ class SLAM_Pipeline():
         # self.image_counter += 1 
         return pred
     
+    def copy_numpy(tensor):
+        return tensor.clone().detach().numpy()[0]
+    
+    def detect_extract2(self, image):
+        '''expects a numpy array image'''
+        print("Python side -- detect_extract2()")
+        #convert to torch 
+        torch_image = numpy_image_to_torch(image)
+        torch_image = torch_image.to(self.device)[None]
+        #run get kps, lines, descs
+        pred = self.pipeline._extract_single_forward(torch_image)
+        #get numpy versions of everything
+        # pred = batch_to_np(pred)
+        descs = np.ascontiguousarray(pred["descriptors"].clone().detach().cpu().numpy()[0].T)
+        print(descs.shape)
+        kps = np.ascontiguousarray(pred["keypoints"].clone().detach().cpu().numpy()[0])
+        prediction = {"gs_frame_id":self.next_frame_id, "descriptors":descs, "keypoints":kps}
+
+        #store frame
+        self.frames[self.next_frame_id] = pred
+        self.next_frame_id += 1
+
+        return prediction
+    
+    def match2(self, frame_id1, frame_id2):
+        '''runs matching against frames stored in python object'''
+        print("Python Side -- match2: frame {} against frame {}".format(frame_id1, frame_id2))
+        pred1 = self.frames[frame_id1]
+        pred2 = self.frames[frame_id2]
+        pred = self.pipeline._match_forward(self.pipeline._merge_kp_pred(pred1, pred2))
+        matches = pred["matches0"].clone().detach()[0].tolist()
+        match_scores = pred["match_scores0"].clone().detach()[0].cpu().numpy()
+        # #quick filter
+        # c = 0
+        # for i,s in enumerate(match_scores):
+        #     if s < 0.9 and (not matches[i] == -1):
+        #         matches[i] = -1
+        #         c += 1
+        # print("removed {} matches".format(c))
+        match_distances = 1 - match_scores
+        print("python side -- match2: first matches: {}".format(matches[:10]))
+        return matches, match_distances.tolist()
+    
     def match(self, image_data1, image_data2):
         #put back on the gpu
         image_data1 = numpy_to_batch(image_data1, self.device)
@@ -87,8 +138,7 @@ class SLAM_Pipeline():
         pred = self.pipeline._merge_kp_pred(image_data1, image_data2)
         #match
         pred = batch_to_np(self.pipeline._match_forward(pred))
-        
-        return pred 
+        return pred
 
 if __name__ == "__main__":
     
@@ -111,19 +161,40 @@ if __name__ == "__main__":
     # torch_gray0, torch_gray1 = numpy_image_to_torch(gray0), numpy_image_to_torch(gray1)
     # torch_gray0, torch_gray1 = torch_gray0.to(slam_pipe.device)[None], torch_gray1.to(slam_pipe.device)[None]
 
-    pred0 = slam_pipe.detect_extract(gray0)
-    pred1 = slam_pipe.detect_extract(gray1)
-    print("kp detection keys")
-    for k, v in pred0.items():
-        print("key : {} , type : {}, shape {}".format(k, type(v), v.shape if type(v) == np.ndarray else -1))
-    print(pred0["keypoints"][0])
-    print("descriptor row:\n{}".format(pred0["descriptors"][0,:10]))
+    # pred0 = slam_pipe.detect_extract(gray0)
+    # pred1 = slam_pipe.detect_extract(gray1)
+    # print("kp detection keys")
+    # for k, v in pred0.items():
+    #     print("key : {} , type : {}, shape {}".format(k, type(v), v.shape if type(v) == np.ndarray else -1))
+    # print(pred0["keypoints"][0])
+    # print("descriptor row:\n{}".format(pred0["descriptors"][0,:10]))
 
-    pred = slam_pipe.match(pred0, pred1)
-    print("descriptor row:\n{}".format(pred0["descriptors"][0,0,:10]))
-    print("descriptor row:\n{}".format(pred["descriptors0"][0,:10]))
-    print("match result keys")
-    print(pred.keys())
-    for k, v in pred.items():
-        print("key : {} , type : {}, shape {}".format(k, type(v), v.shape if type(v) == np.ndarray else -1))
-    print(pred["matches0"])
+    # pred = slam_pipe.match(pred0, pred1)
+    # print("descriptor row:\n{}".format(pred0["descriptors"][0,0,:10]))
+    # print("descriptor row:\n{}".format(pred["descriptors0"][0,:10]))
+    # print("match result keys")
+    # print(pred.keys())
+    # for k, v in pred.items():
+    #     print("key : {} , type : {}, shape {}".format(k, type(v), v.shape if type(v) == np.ndarray else -1))
+    # print(pred["matches0"])
+    
+    pred0 = slam_pipe.detect_extract2(gray0)
+    pred1 = slam_pipe.detect_extract2(gray1)
+    matches, match_scores = slam_pipe.match2(pred0["gs_frame_id"], pred1["gs_frame_id"])
+    # print(matches[:10])
+    # print(match_scores[:10])
+    
+    # har = cv2.cornerHarris(gray0,10,5,0.001)
+    # print("min :", har.min())
+    # print("max :", har.max())
+    # print("mean: ", har.mean())
+    # har = cv2.dilate(har,None)
+    # # har[har<0.01] = 0.0
+
+    # import matplotlib.pyplot as plt
+    # rbgim = cv2.cvtColor(gray0, cv2.COLOR_GRAY2BGR)
+    # rbgim[har > 0.01] = [0,0,255]
+    # fig, ax = plt.subplots()
+    # ax.imshow(rbgim)
+    # plt.show()
+
