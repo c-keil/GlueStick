@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import cv2
+import pickle
 
 from gluestick import batch_to_np, numpy_image_to_torch, GLUESTICK_ROOT
 # from gluestick.drawing import plot_images, plot_lines, plot_color_line_matches, plot_keypoints, plot_matches
@@ -56,7 +57,9 @@ class SLAM_Pipeline():
         self.pipeline = TwoViewPipeline(conf).to(self.device).eval()
 
         self.frames = {}
+        self.reloaclization_frames = {}
         self.next_frame_id = 0
+        self.debug_counter = 0
     
     def detect_extract(self, image, transpose = True):
         '''expects a numpy array image'''
@@ -98,10 +101,13 @@ class SLAM_Pipeline():
         torch_image = torch_image.to(self.device)[None]
         #run get kps, lines, descs
         pred = self.pipeline._extract_single_forward(torch_image)
+        
+        #debug
+        # pred["image_debug"] = image
+
         #get numpy versions of everything
         # pred = batch_to_np(pred)
         descs = np.ascontiguousarray(pred["descriptors"].clone().detach().cpu().numpy()[0].T)
-        print(descs.shape)
         kps = np.ascontiguousarray(pred["keypoints"].clone().detach().cpu().numpy()[0])
         prediction = {"gs_frame_id":self.next_frame_id, "descriptors":descs, "keypoints":kps}
 
@@ -111,25 +117,49 @@ class SLAM_Pipeline():
 
         return prediction
     
-    def match2(self, frame_id1, frame_id2):
-        '''runs matching against frames stored in python object'''
+    def match2(self, frame_id1, frame_id2, reloc1 = False, reloc2 = False):
+        '''runs matching against frames stored in python dict. reloc# attempts to use frames stored in the relocalization frames'''
         print("Python Side -- match2: frame {} against frame {}".format(frame_id1, frame_id2))
-        pred1 = self.frames[frame_id1]
-        pred2 = self.frames[frame_id2]
+        if not reloc1:
+            pred1 = self.frames[frame_id1]
+        else:
+            pred1 = self.reloaclization_frames[frame_id1]
+        if not reloc2:
+            pred2 = self.frames[frame_id2]
+        else:   
+            pred2 = self.reloaclization_frames[frame_id2]
         pred = self.pipeline._match_forward(self.pipeline._merge_kp_pred(pred1, pred2))
         matches = pred["matches0"].clone().detach()[0].tolist()
         match_scores = pred["match_scores0"].clone().detach()[0].cpu().numpy()
-        # #quick filter
-        # c = 0
-        # for i,s in enumerate(match_scores):
-        #     if s < 0.9 and (not matches[i] == -1):
-        #         matches[i] = -1
-        #         c += 1
-        # print("removed {} matches".format(c))
+        # self.draw_debug_match_image(pred, frame_id1,frame_id2,reloc1,reloc2)
         match_distances = 1 - match_scores
         print("python side -- match2: first matches: {}".format(matches[:10]))
         return matches, match_distances.tolist()
     
+    def draw_debug_match_image(self, pred,i,j,a,b):
+        im0 = pred["image_debug0"]
+        im1 = pred["image_debug1"]
+        
+        pred = batch_to_np(pred)
+
+        kp0, kp1 = pred["keypoints0"], pred["keypoints1"]
+        m0 = pred["matches0"]
+
+        valid_matches = m0 != -1
+        match_indices = m0[valid_matches]
+        matched_kps0 = kp0[valid_matches]
+        matched_kps1 = kp1[match_indices]
+        keypoints0 = [cv2.KeyPoint(kp[0], kp[1], 1) for kp in kp0]
+        keypoints1 = [cv2.KeyPoint(kp[0], kp[1], 1) for kp in kp1]
+        # matches = [cv2.DMatch(i,i,0.5) for i in range(len(keypoints0))]
+        good = [cv2.DMatch(i,j,0.0) for i,j in enumerate(m0) if j != -1]
+        # print(len(keypoints0), len(keypoints1), matches)
+        match_im = cv2.drawMatches(im0, keypoints0, im1, keypoints1, good, None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        name = '/home/colin/Research/ir/slam_ws/mapping_results_tmp/debug_ims/' + "{}_{}_{}_{}_{}.png".format(self.debug_counter,i,j,a,b)
+        cv2.imwrite(name,match_im)
+        self.debug_counter += 1
+
+
     def match(self, image_data1, image_data2):
         #put back on the gpu
         image_data1 = numpy_to_batch(image_data1, self.device)
@@ -139,6 +169,17 @@ class SLAM_Pipeline():
         #match
         pred = batch_to_np(self.pipeline._match_forward(pred))
         return pred
+    
+    def save_frames(self, fname="/home/colin/Research/ir/slam_ws/mapping_results_tmp/gs_database.p"):
+        '''saves a pickle of the frames database'''
+        with open(fname,'bw') as pf:
+            pickle.dump(self.frames, pf)
+    
+    def load_relocalization_frames(self, fname="/home/colin/Research/ir/slam_ws/mapping_results_tmp/gs_database.p"):
+        '''reads pickled db'''
+        with open(fname,'br') as pf:
+            self.reloaclization_frames = pickle.load(pf)
+        
 
 if __name__ == "__main__":
     
