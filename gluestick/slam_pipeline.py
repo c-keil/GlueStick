@@ -95,7 +95,7 @@ class SLAM_Pipeline():
     
     def detect_extract2(self, image):
         '''expects a numpy array image'''
-        print("Python side -- detect_extract2()")
+        # print("Python side -- detect_extract2()")
         #convert to torch 
         torch_image = numpy_image_to_torch(image)
         torch_image = torch_image.to(self.device)[None]
@@ -117,9 +117,9 @@ class SLAM_Pipeline():
 
         return prediction
     
-    def match2(self, frame_id1, frame_id2, reloc1 = False, reloc2 = False):
+    def match2(self, frame_id1, frame_id2, reloc1 = False, reloc2 = False, return_full_batch = False):
         '''runs matching against frames stored in python dict. reloc# attempts to use frames stored in the relocalization frames'''
-        print("Python Side -- match2: frame {} against frame {}".format(frame_id1, frame_id2))
+        # print("Python Side -- match2: frame {} against frame {}".format(frame_id1, frame_id2))
         if not reloc1:
             pred1 = self.frames[frame_id1]
         else:
@@ -133,7 +133,9 @@ class SLAM_Pipeline():
         match_scores = pred["match_scores0"].clone().detach()[0].cpu().numpy()
         # self.draw_debug_match_image(pred, frame_id1,frame_id2,reloc1,reloc2)
         match_distances = 1 - match_scores
-        print("python side -- match2: first matches: {}".format(matches[:10]))
+        # print("python side -- match2: first matches: {}".format(matches[:10]))
+        if return_full_batch:
+            return batch_to_np(pred)
         return matches, match_distances.tolist()
     
     def draw_debug_match_image(self, pred,i,j,a,b):
